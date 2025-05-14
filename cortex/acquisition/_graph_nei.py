@@ -12,6 +12,8 @@ from botorch.utils.multi_objective.hypervolume import infer_reference_point
 from botorch.utils.multi_objective.pareto import is_non_dominated
 from torch import Tensor
 
+import pdb
+
 if TYPE_CHECKING:
     from cortex.model.tree import NeuralTree, NeuralTreeOutput
 
@@ -192,17 +194,14 @@ class GraphNEI(object):
         for f in f_baseline:
             f_non_dom.append(f[is_non_dominated(f)])
 
+        f_best = f_baseline.squeeze(-1).amax(dim=1)
         self._obj_dim = len(objectives)
+        # self._obj_dim = f_best.shape[1]
         if self._obj_dim == 1:
-            f_best = f_baseline.max(dim=-2).values.squeeze(-1)
-            self.acq_functions = [
-                qLogExpectedImprovement(
-                    model=None,
-                    best_f=f,
-                    objective=IdentityMCObjective(),
-                )
-                for f in f_best
-            ]
+            # f_best = f_baseline.squeeze(-1).amax(dim=1)
+            # pdb.set_trace()
+            self.acq_functions = [qLogExpectedImprovement( model=None, best_f=f,  objective=IdentityMCObjective(), ) for f in f_best]
+            # self.acq_functions = [qLogExpectedImprovement(model=None, best_f=f.item(), objective=IdentityMCObjective(),) for f in f_best]
         else:
             self.acq_functions = [
                 qLogExpectedHypervolumeImprovement(
