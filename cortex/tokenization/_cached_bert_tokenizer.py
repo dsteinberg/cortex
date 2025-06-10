@@ -2,7 +2,7 @@ import torch
 from cachetools import LRUCache, cached
 from torch import LongTensor, Tensor
 from transformers import BertTokenizerFast
-
+import pdb
 
 class CachedBertTokenizerFast(BertTokenizerFast):
     """
@@ -100,5 +100,14 @@ class CachedBertTokenizerFast(BertTokenizerFast):
         excluded_idxs = (
             torch.tensor([self.vocab[tok] for tok in self.corruption_vocab_excluded]).view(-1, 1, 1).to(token_batch)
         )
-        is_corruptible = token_batch.ne(excluded_idxs).prod(dim=0).bool()
+        # is_corruptible = token_batch.ne(excluded_idxs).prod(dim=0).bool()
+        # print("token_batch.device: ", token_batch.device)
+        # print("token_batch shape:", token_batch.shape)
+        # print("excluded_idxs shape:", excluded_idxs.shape)
+        # print("token_batch dtype:", token_batch.dtype)
+        # print("excluded_idxs dtype:", excluded_idxs.dtype)
+        excluded_idxs = excluded_idxs.view(-1).to(token_batch.device)
+        not_equal = token_batch.unsqueeze(0) != excluded_idxs[:, None, None]
+        is_corruptible = not_equal.all(dim=0)
+        # is_corruptible = token_batch.ne(excluded_idxs.to(token_batch.device)).prod(dim=0).bool()
         return is_corruptible
