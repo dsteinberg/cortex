@@ -10,12 +10,6 @@ from botorch.acquisition.objective import IdentityMCObjective
 from botorch.utils.multi_objective.box_decompositions import FastNondominatedPartitioning
 from botorch.utils.multi_objective.hypervolume import infer_reference_point
 from botorch.utils.multi_objective.pareto import is_non_dominated
-from botorch.acquisition.multi_objective.monte_carlo import qExpectedHypervolumeImprovement
-from botorch.utils.multi_objective.box_decompositions import NondominatedPartitioning
-from botorch.sampling.normal import SobolQMCNormalSampler
-from botorch.models import SingleTaskGP
-from botorch.models.model_list_gp_regression import ModelListGP
-from gpytorch.mlls.sum_marginal_log_likelihood import SumMarginalLogLikelihood
 from torch import Tensor
 
 import pdb
@@ -202,21 +196,21 @@ class GraphNEI(object):
 
         f_best = f_baseline.squeeze(-1).amax(dim=1)
         self._obj_dim = len(objectives)
-        
-        # if self._obj_dim == 1:
-        if objectives[0] != 'generic_task':
+        # self._obj_dim = f_best.shape[1]
+        if self._obj_dim == 1:
             # f_best = f_baseline.squeeze(-1).amax(dim=1)
-            self.acq_functions = [qLogExpectedImprovement(model=None, best_f=f,  objective=IdentityMCObjective(),) for f in f_best]
+            # pdb.set_trace()
+            self.acq_functions = [qLogExpectedImprovement( model=None, best_f=f,  objective=IdentityMCObjective(), ) for f in f_best]
+            # self.acq_functions = [qLogExpectedImprovement(model=None, best_f=f.item(), objective=IdentityMCObjective(),) for f in f_best]
         else:
-            f_all = torch.cat(f_non_dom, dim=1)
-            self.acq_functions = [ 
-                qLogExpectedImprovement(
-                    model=None, 
-                    best_f=f_all[:, i].max(),  
-                    objective=IdentityMCObjective(), 
-                ) for i in range(f_all.shape[1]) 
+            self.acq_functions = [
+                qLogExpectedHypervolumeImprovement(
+                    model=None,
+                    ref_point=f_ref,
+                    partitioning=FastNondominatedPartitioning(f_ref, f),
+                )
+                for f in f_non_dom
             ]
-
         self.has_pointwise_reference = False
 
     def get_objective_vals(self, tree_output: NeuralTreeOutput):
