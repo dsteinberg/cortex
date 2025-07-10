@@ -59,18 +59,11 @@ class LaMBO(object):
         self.is_mutable = is_mutable
 
         self._step_count = 0
-        obj_val_numpy = self.initial_obj_val.cpu().numpy()
-        obj_val_cols = {
-            f"obj_val_{i}": obj_val_numpy[:, i]
-            for i in range(obj_val_numpy.shape[1])
-        }
-        
         self._buffer = pd.DataFrame(
             {
                 "iteration": self._step_count,
                 domain_name: self.initial_solution,
-                # "obj_val": self.initial_obj_val.cpu().numpy(),
-                **obj_val_cols,
+                "obj_val": self.initial_obj_val.cpu().numpy(),
             },
             index=list(range(initial_obj_val.size(0))),
         )
@@ -229,11 +222,7 @@ class LaMBO(object):
 
         tgt_str_array = [self.tokenizer.decode(t_idxs) for t_idxs in tgt_tok_idxs]
         df = pd.DataFrame({self.domain_name: tgt_str_array})
-        ###### comment this line
-        # df.loc[:, "obj_val"] = tgt_obj_vals.cpu().numpy()
-        obj_array = tgt_obj_vals.cpu().numpy()
-        for i in range(obj_array.shape[1]):
-             df[f"obj_{i}"] = obj_array[:, i]
+        df.loc[:, "obj_val"] = tgt_obj_vals.cpu().numpy()
         df.loc[:, "iteration"] = self._step_count
 
         self._buffer = pd.concat([self._buffer, df], ignore_index=True)
@@ -344,15 +333,10 @@ class LaMBO(object):
             print(f"Feasible samples: {sample_is_feasible.sum()}/{sample_is_feasible.size(0)}")
 
             # keep improved feasible sequences
-            ###### comment below line
-            # replace_mask = sample_is_improved * sample_is_feasible.to(sample_is_improved)
-            replace_mask = sample_is_improved.all(dim=-1) & sample_is_feasible
-            tgt_tok_idxs = torch.where(replace_mask[:, None], sample_tok_idxs, tgt_tok_idxs)
-            tgt_obj_vals = torch.where(replace_mask[:, None], sample_obj_vals, tgt_obj_vals)
+            replace_mask = sample_is_improved * sample_is_feasible.to(sample_is_improved)
             # tgt_tok_embs = torch.where(replace_mask[..., None, None], sample_tok_embs, tgt_tok_embs)
-            ###### comment below 2 lines
-            # tgt_tok_idxs = torch.where(replace_mask[..., None], sample_tok_idxs, tgt_tok_idxs)
-            # tgt_obj_vals = torch.where(replace_mask, sample_obj_vals, tgt_obj_vals)
+            tgt_tok_idxs = torch.where(replace_mask[..., None], sample_tok_idxs, tgt_tok_idxs)
+            tgt_obj_vals = torch.where(replace_mask, sample_obj_vals, tgt_obj_vals)
 
         return tgt_tok_idxs, tgt_obj_vals
 
@@ -422,11 +406,7 @@ class LaMBO(object):
 
     def get_best_solutions(self) -> pd.DataFrame:
         res = self._buffer.iloc[-self.initial_solution.shape[0] :].copy()
-        ###### comment this line
-        # res["obj_val_init"] = self.initial_obj_val.cpu().numpy()
-        init_obj_vals = self.initial_obj_val.cpu().numpy()
-        for i in range(init_obj_vals.shape[1]):
-            res[f"obj_val_init_{i}"] = init_obj_vals[:, i]
+        res["obj_val_init"] = self.initial_obj_val.cpu().numpy()
         return res
 
     def decode(self, trunk_outputs, non_viable_idxs):

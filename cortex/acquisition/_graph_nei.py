@@ -5,9 +5,13 @@ from typing import TYPE_CHECKING, Optional
 import numpy as np
 import torch
 from botorch.acquisition.logei import qLogExpectedImprovement
-from botorch.acquisition.multi_objective.logei import qLogExpectedHypervolumeImprovement
+from botorch.acquisition.multi_objective.logei import (
+    qLogExpectedHypervolumeImprovement,
+)
 from botorch.acquisition.objective import IdentityMCObjective
-from botorch.utils.multi_objective.box_decompositions import FastNondominatedPartitioning
+from botorch.utils.multi_objective.box_decompositions import (
+    FastNondominatedPartitioning,
+)
 from botorch.utils.multi_objective.hypervolume import infer_reference_point
 from botorch.utils.multi_objective.pareto import is_non_dominated
 from torch import Tensor
@@ -54,7 +58,9 @@ def get_joint_objective_values(
     """
 
     if not all([obj in inputs for obj in objectives]):
-        raise ValueError(f"Not all objectives {objectives} in predicted_properties {inputs.keys()}")
+        raise ValueError(
+            f"Not all objectives {objectives} in predicted_properties {inputs.keys()}"
+        )
 
     objective_values: list[Tensor] = []
 
@@ -62,11 +68,16 @@ def get_joint_objective_values(
         pred_means = inputs[obj]
 
         if scaling is not None and obj in scaling:
-            pred_means = scale_value(pred_means, shift=scaling[obj]["shift"], scale=scaling[obj]["scale"])
+            pred_means = scale_value(
+                pred_means,
+                shift=scaling[obj]["shift"],
+                scale=scaling[obj]["scale"],
+            )
 
         objective_values.append(pred_means)
 
-    objective_values = torch.stack(objective_values, dim=-1)
+    objective_values = torch.stack(objective_values, dim=-1).squeeze()
+    objective_values = torch.atleast_3d(objective_values)
 
     if constraints is None:
         return objective_values
@@ -118,7 +129,9 @@ def tree_output_to_dict(
     result: dict[str, Tensor] = {}
 
     for objective in objectives:
-        result[objective] = tree_output.fetch_task_outputs(objective)["loc"].squeeze(-1)
+        result[objective] = tree_output.fetch_task_outputs(objective)[
+            "loc"
+        ].squeeze(-1)
 
         if scaling is not None and objective in scaling:
             result[f"{objective}_scaled"] = scale_value(
@@ -133,7 +146,9 @@ def tree_output_to_dict(
                 if constraint in result:
                     continue
 
-                constraint_values = tree_output.fetch_task_outputs(constraint)["logits"]
+                constraint_values = tree_output.fetch_task_outputs(constraint)[
+                    "logits"
+                ]
                 constraint_values = constraint_values.softmax(dim=-1)[..., 1]
 
                 result[constraint] = constraint_values
@@ -150,9 +165,16 @@ def get_graph_nei_runtime_kwargs(
 ):
     print("==== predicting baseline point objective values ====")
     with torch.inference_mode():
-        tree_output = model.call_from_str_array(candidate_points, corrupt_frac=0.0)
+        tree_output = model.call_from_str_array(
+            candidate_points, corrupt_frac=0.0
+        )
 
-    tree_output_dict = tree_output_to_dict(tree_output, objectives=objectives, constraints=constraints, scaling=scaling)
+    tree_output_dict = tree_output_to_dict(
+        tree_output,
+        objectives=objectives,
+        constraints=constraints,
+        scaling=scaling,
+    )
     f_baseline = get_joint_objective_values(
         inputs=tree_output_dict,
         objectives=objectives,
@@ -160,8 +182,9 @@ def get_graph_nei_runtime_kwargs(
         scaling=scaling,
     )  # (num_samples, num_baseline, num_objectives)
 
-    f_baseline_flat = f_baseline.reshape(-1, len(objectives))
-    f_baseline_non_dom = f_baseline_flat[is_non_dominated(f_baseline_flat)]
+    # f_baseline_flat = f_baseline.reshape(-1, len(objectives))
+    # f_baseline_non_dom = f_baseline_flat[is_non_dominated(f_baseline_flat)]
+    f_baseline_non_dom = f_baseline[is_non_dominated(f_baseline)]
     print(f_baseline_non_dom)
     f_ref = infer_reference_point(f_baseline_non_dom)
     print(f"reference point: {f_ref}")
@@ -169,7 +192,9 @@ def get_graph_nei_runtime_kwargs(
         "f_ref": f_ref,
         "f_baseline": f_baseline,
     }
-    print(f"[INFO][LaMBO-2] Baseline value: {f_baseline.mean(0).max().item():.4f}")
+    print(
+        f"[INFO][LaMBO-2] Baseline value: {f_baseline.mean(0).max().item():.4f}"
+    )
     return res
 
 
@@ -191,17 +216,21 @@ class GraphNEI(object):
         self.scaling = scaling
 
         f_non_dom = []
+        f_baseline = f_baseline.squeeze()
         for f in f_baseline:
             f_non_dom.append(f[is_non_dominated(f)])
 
-        f_best = f_baseline.squeeze(-1).amax(dim=1)
-        self._obj_dim = len(objectives)
-        # self._obj_dim = f_best.shape[1]
+        self._obj_dim = f_baseline.shape[-1]
         if self._obj_dim == 1:
-            # f_best = f_baseline.squeeze(-1).amax(dim=1)
-            # pdb.set_trace()
-            self.acq_functions = [qLogExpectedImprovement( model=None, best_f=f,  objective=IdentityMCObjective(), ) for f in f_best]
-            # self.acq_functions = [qLogExpectedImprovement(model=None, best_f=f.item(), objective=IdentityMCObjective(),) for f in f_best]
+            f_best = f_baseline.max(dim=-2).values.squeeze(-1)
+            self.acq_functions = [
+                qLogExpectedImprovement(
+                    model=None,
+                    best_f=f,
+                    objective=IdentityMCObjective(),
+                )
+                for f in f_best
+            ]
         else:
             self.acq_functions = [
                 qLogExpectedHypervolumeImprovement(
@@ -214,7 +243,9 @@ class GraphNEI(object):
         self.has_pointwise_reference = False
 
     def get_objective_vals(self, tree_output: NeuralTreeOutput):
-        tree_output_dict = tree_output_to_dict(tree_output, self.objectives, self.constraints, self.scaling)
+        tree_output_dict = tree_output_to_dict(
+            tree_output, self.objectives, self.constraints, self.scaling
+        )
         return get_joint_objective_values(
             tree_output_dict,
             self.objectives,
@@ -230,16 +261,26 @@ class GraphNEI(object):
             obj_val_samples = input
 
         if pointwise:
-            obj_val_samples = obj_val_samples.unsqueeze(-2)  # (num_samples, num_designs, 1, num_objectives)
+            obj_val_samples = obj_val_samples.unsqueeze(
+                -2
+            )  # (num_samples, num_designs, 1, num_objectives)
 
         # assumes the first dimension of obj_vals corresponds to the qEHVI partitions
         if self._obj_dim == 1:
             acq_vals = torch.stack(
-                [fn._sample_forward(vals) for fn, vals in zip(self.acq_functions, obj_val_samples.squeeze(-1))]
+                [
+                    fn._sample_forward(vals)
+                    for fn, vals in zip(
+                        self.acq_functions, obj_val_samples.squeeze(-1)
+                    )
+                ]
             ).squeeze(-1)
         else:
             acq_vals = torch.stack(
-                [fn._compute_log_qehvi(vals.unsqueeze(0)) for fn, vals in zip(self.acq_functions, obj_val_samples)]
+                [
+                    fn._compute_log_qehvi(vals.unsqueeze(0))
+                    for fn, vals in zip(self.acq_functions, obj_val_samples)
+                ]
             )
 
         return acq_vals.mean(0)
